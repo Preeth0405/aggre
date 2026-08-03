@@ -58,7 +58,7 @@ if uploaded:
         continue
 
         try:
-        df[c] = pd.to_numeric(df[c])
+          df[c] = pd.to_numeric(df[c])
     except Exception:
         pass
 
