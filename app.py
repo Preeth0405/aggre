@@ -54,10 +54,10 @@ if uploaded:
     # -----------------------------
     for c in df.columns:
 
-    if c == "#Time":
+        if c == "#Time":
         continue
 
-    try:
+        try:
         df[c] = pd.to_numeric(df[c])
     except Exception:
         pass
