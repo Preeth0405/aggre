@@ -1,141 +1,131 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
+import re
 
-st.set_page_config(
-    page_title="Huawei 5-Min to 15-Min Aggregator",
-    layout="wide"
-)
+st.set_page_config(page_title="Huawei Aggregator", layout="wide")
 
 st.title("Huawei Smart Logger 5-Min → 15-Min Aggregator")
 
-uploaded = st.file_uploader(
-    "Upload Huawei CSV",
-    type=["csv"]
-)
+uploaded = st.file_uploader("Upload Huawei CSV", type="csv")
 
 if uploaded:
 
-    try:
+    # -----------------------------
+    # Read serial number
+    # -----------------------------
+    uploaded.seek(0)
 
-        # ---------------------------------------------------
-        # Read Huawei CSV
-        # ---------------------------------------------------
+    header1 = uploaded.readline().decode("utf-8").strip()
+    header2 = uploaded.readline().decode("utf-8").strip()
 
-        df = pd.read_csv(
-            uploaded,
-            skiprows=2,
-            encoding="utf-8"
+    serial = ""
+
+    m = re.search(r"INV SN:\s*(.*)", header2)
+
+    if m:
+        serial = m.group(1).strip()
+
+    uploaded.seek(0)
+
+    # -----------------------------
+    # Read CSV
+    # -----------------------------
+    df = pd.read_csv(
+        uploaded,
+        skiprows=2
+    )
+
+    df.columns = (
+        df.columns
+        .str.replace('"',"")
+        .str.strip()
+    )
+
+    # -----------------------------
+    # Timestamp
+    # -----------------------------
+    df["#Time"] = pd.to_datetime(df["#Time"])
+
+    df = df.set_index("#Time")
+
+    # -----------------------------
+    # Convert numeric
+    # -----------------------------
+    for c in df.columns:
+
+        df[c] = pd.to_numeric(
+            df[c],
+            errors="ignore"
         )
 
-        # Clean column names
-        df.columns = (
-            df.columns
-            .str.replace('"', '', regex=False)
-            .str.strip()
+    # -----------------------------
+    # Build aggregation dictionary
+    # -----------------------------
+    agg = {}
+
+    for c in df.columns:
+
+        if not pd.api.types.is_numeric_dtype(df[c]):
+            continue
+
+        name = c.lower()
+
+        if "total" in name:
+
+            agg[c] = "last"
+
+        elif "energy" in name:
+
+            agg[c] = "sum"
+
+        elif "eac(" in name:
+
+            agg[c] = "sum"
+
+        else:
+
+            agg[c] = "mean"
+
+    # -----------------------------
+    # Aggregate
+    # -----------------------------
+    result = df.resample("15min").agg(agg)
+
+    result.insert(
+        0,
+        "Inverter Serial Number",
+        serial
+    )
+
+    result = result.reset_index()
+
+    # -----------------------------
+    # Display
+    # -----------------------------
+    st.subheader("15 Minute Data")
+
+    st.dataframe(result)
+
+    # -----------------------------
+    # Download
+    # -----------------------------
+    output = BytesIO()
+
+    with pd.ExcelWriter(
+        output,
+        engine="openpyxl"
+    ) as writer:
+
+        result.to_excel(
+            writer,
+            sheet_name="15 Minute",
+            index=False
         )
 
-        st.success("CSV Loaded Successfully")
-
-        st.subheader("Original Data")
-
-        st.dataframe(df)
-
-        # ---------------------------------------------------
-        # Timestamp
-        # ---------------------------------------------------
-
-        if "#Time" not in df.columns:
-            st.error("Column '#Time' not found.")
-            st.stop()
-
-        df["#Time"] = pd.to_datetime(df["#Time"])
-
-        df = df.set_index("#Time")
-
-        # ---------------------------------------------------
-        # Check required columns
-        # ---------------------------------------------------
-
-        required = [
-            "Pac(kW)",
-            "Eac(kWh)",
-            "Eac Total(kWh)"
-        ]
-
-        for col in required:
-
-            if col not in df.columns:
-
-                st.error(f"{col} not found.")
-
-                st.stop()
-
-        # ---------------------------------------------------
-        # Convert to numeric
-        # ---------------------------------------------------
-
-        for col in required:
-
-            df[col] = pd.to_numeric(
-                df[col],
-                errors="coerce"
-            )
-
-        # ---------------------------------------------------
-        # Aggregate
-        # ---------------------------------------------------
-
-        result = pd.DataFrame()
-
-        result["Pac(kW)"] = (
-            df["Pac(kW)"]
-            .resample("15min")
-            .mean()
-        )
-
-        result["Eac(kWh)"] = (
-            df["Eac(kWh)"]
-            .resample("15min")
-            .sum()
-        )
-
-        result["Eac Total(kWh)"] = (
-            df["Eac Total(kWh)"]
-            .resample("15min")
-            .last()
-        )
-
-        result = result.reset_index()
-
-        st.subheader("15-Minute Aggregated Data")
-
-        st.dataframe(result)
-
-        # ---------------------------------------------------
-        # Download Excel
-        # ---------------------------------------------------
-
-        output = BytesIO()
-
-        with pd.ExcelWriter(
-            output,
-            engine="openpyxl"
-        ) as writer:
-
-            result.to_excel(
-                writer,
-                sheet_name="15_Min_Data",
-                index=False
-            )
-
-        st.download_button(
-            "Download Excel",
-            output.getvalue(),
-            file_name="Aggregated_15min.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-    except Exception as e:
-
-        st.error(str(e))
+    st.download_button(
+        "Download Excel",
+        output.getvalue(),
+        "15min_" + serial + ".xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
