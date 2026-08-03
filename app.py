@@ -54,10 +54,13 @@ if uploaded:
     # -----------------------------
     for c in df.columns:
 
-        df[c] = pd.to_numeric(
-            df[c],
-            errors="ignore"
-        )
+    if c == "#Time":
+        continue
+
+    try:
+        df[c] = pd.to_numeric(df[c])
+    except Exception:
+        pass
 
     # -----------------------------
     # Build aggregation dictionary
