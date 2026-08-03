@@ -53,15 +53,13 @@ if uploaded:
     # Convert numeric
     # -----------------------------
     for c in df.columns:
-
         if c == "#Time":
-        continue
+           continue
 
         try:
-          df[c] = pd.to_numeric(df[c])
-    except Exception:
-        pass
-
+           df[c] = pd.to_numeric(df[c])
+        except Exception:
+           pass
     # -----------------------------
     # Build aggregation dictionary
     # -----------------------------
